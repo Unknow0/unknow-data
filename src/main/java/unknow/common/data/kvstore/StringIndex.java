@@ -104,7 +104,7 @@ public class StringIndex {
 
 		@Override
 		public void close() throws IOException {
-			try (RandomAccessFile out = new RandomAccessFile(output, "w")) {
+			try (RandomAccessFile out = new RandomAccessFile(output, "rw")) {
 				out.writeInt(len);
 				for (int i = 0; i < len; i++) {
 					out.writeUTF(key[i]);
