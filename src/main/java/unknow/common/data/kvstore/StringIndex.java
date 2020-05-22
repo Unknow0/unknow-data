@@ -37,7 +37,9 @@ public class StringIndex {
 		offset = new long[len];
 
 		for (int i = 0; i < len; i++) {
-			String k = file.readUTF();
+			int l = file.readUnsignedByte();
+			file.read(buf, 0, l);
+			String k = new String(buf, 0, l, StandardCharsets.UTF_8);
 			int o = Arrays.binarySearch(key, 0, i, k);
 			if (o >= 0)
 				continue;
@@ -59,7 +61,7 @@ public class StringIndex {
 		if (i < 0)
 			return null;
 		file.seek(offset[i]);
-		int len = file.readInt();
+		int len = file.readUnsignedShort();
 		if (buf.length < len)
 			buf = new byte[len];
 		file.read(buf, 0, len);
@@ -67,8 +69,10 @@ public class StringIndex {
 		return new String(buf, 0, len, StandardCharsets.UTF_8);
 	}
 
-	public static class Creator extends StringIndex implements AutoCloseable {
+	public static class Creator implements AutoCloseable {
 		private int len = 0;
+		protected String[] key;
+		protected long[] offset;
 
 		private File output;
 		private RandomAccessFile file;
@@ -83,22 +87,30 @@ public class StringIndex {
 		}
 
 		public void add(String k, String data) throws IOException {
+			byte[] keyBytes = k.getBytes(StandardCharsets.UTF_8);
+			if (keyBytes.length > 255)
+				throw new IOException("key length > 255");
+
 			int i = Arrays.binarySearch(key, 0, len, k);
 			if (i >= 0) {
 				System.err.println("duplicate key skip");
 				return;
 			}
+			if (len == key.length) {
+				key = Arrays.copyOf(key, len + 256);
+				offset = Arrays.copyOf(offset, len + 256);
+			}
 			i = -i - 1;
-			if (i < i) {
+			if (i < len) {
 				System.arraycopy(key, i, key, i + 1, len - i);
 				System.arraycopy(offset, i, offset, i + 1, len - i);
 			}
-			key[len] = k;
-			offset[len] = file.getFilePointer();
+			key[i] = k;
+			offset[i] = file.getFilePointer();
 			len++;
 
 			byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
-			file.writeInt(bytes.length);
+			file.writeShort(bytes.length);
 			file.write(bytes);
 		}
 
@@ -107,10 +119,12 @@ public class StringIndex {
 			try (RandomAccessFile out = new RandomAccessFile(output, "rw")) {
 				out.writeInt(len);
 				for (int i = 0; i < len; i++) {
-					out.writeUTF(key[i]);
+					byte[] k = key[i].getBytes(StandardCharsets.UTF_8);
+					out.write(k.length);
+					out.write(k);
 					out.writeLong(offset[i]);
 				}
-				file.setLength(0);
+				file.seek(0);
 				byte[] buf = new byte[4096];
 				int l;
 				while ((l = file.read(buf)) > -1)
